@@ -1,10 +1,10 @@
-prefix ?= $(HOME)
-bindir ?= $(prefix)/bin
+PREFIX ?= /usr/local
+DSTDIR := $(PREFIX)/bin
 SHFMT_FLAGS := -i 4 -ln posix
 TESTS := $(wildcard test/*.t)
 
 TOMDOCSH_VERSION := $(shell test -d .git && command -v git >/dev/null && \
-	git describe --tags --match "v[0-9]*" --abbrev=4 --dirty | cut -c2- || \
+	git describe --tags --match "v[0-9]*" --abbrev=4 --dirty 2>/dev/null | cut -c2- || \
 	sed -n -e "s/TOMDOCSH_VERSION=\"\(.*\)\"/\1/p" tomdoc.sh)
 
 all:
@@ -23,12 +23,12 @@ test: all
 	$(MAKE) -C test
 
 install: all
-	mkdir -p '$(DESTDIR)$(bindir)'
-	sed -e "s/\(TOMDOCSH_VERSION\)=.*/\1=\"$(TOMDOCSH_VERSION)\"/" tomdoc.sh > \
-	'$(DESTDIR)$(bindir)/tomdoc.sh'
-	chmod 755 '$(DESTDIR)$(bindir)/tomdoc.sh'
+	mkdir -p '$(DSTDIR)'
+	sed -e "s/\(TOMDOCSH_VERSION\)=.*/\1=\"$(TOMDOCSH_VERSION)\"/" tomdoc.sh > '$(DSTDIR)/tomdoc.sh'
+	chmod 755 '$(DSTDIR)/tomdoc.sh'
 
+remove: uninstall
 uninstall:
-	$(RM) '$(DESTDIR)$(bindir)/tomdoc.sh'
+	$(RM) '$(DSTDIR)/tomdoc.sh'
 
-.PHONY: all test install uninstall
+.PHONY: all test install uninstall remove

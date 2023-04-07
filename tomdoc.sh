@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #/ Usage: tomdoc.sh [options] [--] [<shell-script>...]
 #/
 #/     -h, --help               show help text
@@ -13,53 +13,13 @@
 # transfered to Tyler Akins <fidian@rumkin.com>.
 
 set -e
-test -n "$TOMDOCSH_DEBUG" && set -x
+[[ -n "$TOMDOCSH_DEBUG" ]] && set -x
 
 # Current version of tomdoc.sh.
 TOMDOCSH_VERSION="0.1.10"
 
 generate=generate_text
 access=
-
-while test "$#" -ne 0; do
-    case "$1" in
-    -h | --h | --he | --hel | --help)
-        grep '^#/' <"$0" | cut -c4-
-        exit 0
-        ;;
-    --version)
-        printf "tomdoc.sh version %s\n" "$TOMDOCSH_VERSION"
-        exit 0
-        ;;
-    -t | --t | --te | --tex | --text)
-        generate=generate_text
-        shift
-        ;;
-    -m | --m | --ma | --mar | --mark | --markd | --markdo | --markdow | --markdown)
-        generate=generate_markdown
-        shift
-        ;;
-    -a | --a | --ac | --acc | --acce | --acces | --access)
-        test "$#" -ge 2 || {
-            printf "error: %s requires an argument\n" "$1" >&2
-            exit 1
-        }
-        access="$2"
-        shift 2
-        ;;
-    --)
-        shift
-        break
-        ;;
-    - | [!-]*)
-        break
-        ;;
-    -*)
-        printf "error: invalid option '%s'\n" "$1" >&2
-        exit 1
-        ;;
-    esac
-done
 
 # Regular expression matching at least one whitespace.
 SPACE_RE='[[:space:]][[:space:]]*'
@@ -278,6 +238,55 @@ parse_tomdoc() {
         esac
     done
 }
+
+#\## SCRIPT STARTS HERE
+
+[[ $# -eq 0 ]] && set -- --usage
+
+while [[ $# -ne 0 ]]; do
+    case "$1" in
+    -h | --help)
+        grep '^#/' <"$0" | cut -c4-
+        exit 0
+        ;;
+    --version)
+        printf "tomdoc.sh version %s\n" "$TOMDOCSH_VERSION"
+        exit 0
+        ;;
+    -t | --text)
+        generate=generate_text
+        shift
+        ;;
+    -m | --mark | --markdown)
+        generate=generate_markdown
+        shift
+        ;;
+    -a | --access)
+        [[ $# -ge 2 ]] || {
+            printf "error: %s requires an argument\n" "$1" >&2
+            exit 1
+        }
+        access="$2"
+        shift 2
+        ;;
+    --usage )
+        grep '^#/' <"$0" | head -n1 | cut -c4-
+        exit 1
+        ;;
+    --)
+        shift
+        break
+        ;;
+    - | [!-]*)
+        break
+        ;;
+    -*)
+        printf "error: invalid option '%s'\n" "$1" >&2
+        exit 1
+        ;;
+    esac
+done
+
 
 cat -- "$@" | parse_tomdoc
 

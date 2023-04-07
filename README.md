@@ -65,14 +65,14 @@ Installation
 
 Installing tomdoc.sh is simple:
 
-    $ git clone git://github.com/tests-always-included/tomdoc.sh.git
+    $ git clone https://github.com/Keyaku/tomdoc.sh
     $ cd tomdoc.sh
     $ make install
 
-That will install tomdoc.sh to `$HOME/bin` by default. For a different target
-directory, set `bindir` accordingly, e.g.
+That will install tomdoc.sh with a prefix of `/usr/local` by default. For a different target
+directory, set `PREFIX` accordingly, e.g.
 
-    # make install bindir=/usr/local/bin
+    # make install PREFIX=/usr
 
 
 Usage
@@ -128,8 +128,7 @@ License
 Contact
 -------
 
-* Web: <https://github.com/tests-always-included/tomdoc.sh>
-* Mail: <fidian@rumkin.com>
+* Web: <https://github.com/Keyaku/tomdoc.sh>
 
 
 [COPYING]: ./test/COPYING
