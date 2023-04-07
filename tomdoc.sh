@@ -11,46 +11,31 @@
 #
 # Written by Mathias Lafeldt <mathias.lafeldt@gmail.com>, later project was
 # transfered to Tyler Akins <fidian@rumkin.com>.
+# Forked by António Sarmento (a.k.a. Keyaku).
 
 set -e
 [[ -n "$TOMDOCSH_DEBUG" ]] && set -x
 
 # Current version of tomdoc.sh.
-TOMDOCSH_VERSION="0.1.10"
+TOMDOCSH_VERSION="0.2.0"
 
 generate=generate_text
 access=
 
 # Regular expression matching at least one whitespace.
-SPACE_RE='[[:space:]][[:space:]]*'
+SPACE_RE='[[:space:]]+'
 
 # Regular expression matching optional whitespace.
 OPTIONAL_SPACE_RE='[[:space:]]*'
 
 # The inverse of the above, must match at least one character
-NOT_SPACE_RE='[^[:space:]][^[:space:]]*'
+NOT_SPACE_RE='[^[:space:]]+'
 
-# Regular expression matching shell function or variable name.  Functions may
-# use nearly every character.  See [issue #8].  Disallowed characters (hex,
-# octal, then a description or a character):
-#
-#   00 000 null       01 001 SOH        09 011 Tab        0a 012 Newline
-#   20 040 Space      22 042 Quote      23 043 #          24 044 $
-#   26 046 &          27 047 Apostrophe 28 050 (          29 051 )
-#   2d 055 Hyphen     3b 073 ;          3c 074 <          3d 075 =
-#   3e 076 >          5b 133 [          5c 134 Backslash  60 140 Backtick
-#   7c 174 |          7f 177 Delete
-#
-# Exceptions allowed as leading character:  \x3d and \x5b
-# Exceptions allowed as secondary character: \x23 and \x2d
-#
-# Must translate to raw characters because Mac OS X's sed does not work with
-# escape sequences.  All escapes are handled by printf.
-#
-# Must use a hyphen first because otherwise it is an invalid range expression.
-#
-# [issue #8]: https://github.com/tests-always-included/tomdoc.sh/issues/8
-FUNC_NAME_RE=$(printf "[^-\\001\\011 \"#$&'();<>\\134\\140|\\177][^\\001\\011 \"$&'();<=>[\\134\\140|\\177]*")
+# Regular expression for 0 or 1. Special case for Mac.
+Z_1="$([ $(uname -s) = Darwin ] && echo '{0,1}' || echo '?')"
+
+# Regular expression matching shell function or variable name.
+FUNC_NAME_RE="[a-zA-Z_][a-zA-Z0-9_:]*"
 
 # Regular expression matching variable names.  Similar to FUNC_NAME_RE.
 # Variables are far more restrictive.
@@ -61,11 +46,22 @@ VAR_NAME_RE='[A-Z_a-z][0-9=A-Z_a-z]*'
 
 # Strip leading whitespace and '#' from TomDoc strings.
 #
-# Can not use \?, use \{0,1\} instead to preserve Mac support.
+# Can not use ?, use {0,1} instead to preserve Mac support.
 #
 # Returns nothing.
 uncomment() {
-    sed -e "s/^$OPTIONAL_SPACE_RE#[[:space:]]\{0,1\}//"
+	sed -E "s/^$OPTIONAL_SPACE_RE#[[:space:]]$Z_1//"
+}
+
+# Joins an array into a character-delimited string.
+#
+# $1 - Delimiter
+# $@ - Array
+function str_join {
+	local d=${1-} f=${2-}
+	if shift 2; then
+		printf %s "$f" "${*/#/$d}"
+	fi
 }
 
 # Generate the documentation for a shell function or variable in plain text
@@ -76,7 +72,7 @@ uncomment() {
 #
 # Returns nothing.
 generate_text() {
-    cat <<EOF
+	cat <<EOF
 --------------------------------------------------------------------------------
 $1
 
@@ -93,112 +89,114 @@ EOF
 #
 # Returns nothing.
 generate_markdown() {
-    printf "%s\n" '`'"$1"'`'
-    printf "%s" " $1 " | tr -c - -
-    printf "\n\n"
+	printf "%s\n" '`'"$1"'`'
+	printf "%s" " $1 " | tr -c - -
+	printf "\n\n"
 
-    last=""
-    did_newline=false
-    last_was_option=false
+	local line last
+	local did_newline=false
+	local last_was_option=false
 
-    printf "%s\n" "$2" | uncomment | sed -e "s/$SPACE_RE$//" | while IFS='' read -r line; do
-        if printf "%s" "$line" | grep -q "^$OPTIONAL_SPACE_RE$NOT_SPACE_RE$SPACE_RE-$SPACE_RE"; then
-            # This is for arguments
-            if ! $did_newline; then
-                printf "\n"
-            fi
+	printf "%s\n" "$2" | uncomment | sed -e "s/$SPACE_RE$//" | while IFS='' read -r line; do
+		if printf "%s" "$line" | grep -q "^$OPTIONAL_SPACE_RE$NOT_SPACE_RE$SPACE_RE-$SPACE_RE"; then
+			# This is for arguments
+			if ! $did_newline; then
+				printf "\n"
+			fi
 
-            if printf "%s" "$line" | grep -q "^$NOT_SPACE_RE"; then
-                printf "%s" "* $line"
-            else
-                # Careful - BSD sed always adds a newline
-                printf "    * "
-                printf "%s" "$line" | sed "s/^$SPACE_RE//" | tr -d "\n"
-            fi
+			if printf "%s" "$line" | grep -q "^$NOT_SPACE_RE"; then
+				printf "%s" "* $line"
+			else
+				# Careful - BSD sed always adds a newline
+				printf "    * "
+				printf "%s" "$line" | sed "s/^$SPACE_RE//" | tr -d "\n"
+			fi
 
-            last_was_option=true
+			last_was_option=true
 
-            # shellcheck disable=SC2030
+			# shellcheck disable=SC2030
 
-            did_newline=false
-        else
-            case "$line" in
-            "")
-                # Check for end of paragraph / section
-                if ! $did_newline; then
-                    printf "\n"
-                fi
+			did_newline=false
+		else
+			case "$line" in
+			"")
+				# Check for end of paragraph / section
+				if ! $did_newline; then
+					printf "\n"
+				fi
 
-                printf "\n"
-                did_newline=true
-                last_was_option=false
-                ;;
+				printf "\n"
+				did_newline=true
+				last_was_option=false
+				;;
 
-            "  "*)
-                # Examples and option continuation
-                if $last_was_option; then
-                    # Careful - BSD sed always adds a newline
-                    printf "%s" "$line" | sed "s/^ */ /" | tr -d "\n"
-                    did_newline=false
-                else
-                    printf "  %s\n" "$line"
-                    did_newline=true
-                fi
-                ;;
+			"  "*)
+				# Examples and option continuation
+				if $last_was_option; then
+					# Careful - BSD sed always adds a newline
+					printf "%s" "$line" | sed "s/^ */ /" | tr -d "\n"
+					did_newline=false
+				else
+					printf "  %s\n" "$line"
+					did_newline=true
+				fi
+				;;
 
-            "* "*)
-                # A list should not continue a previous paragraph.
-                printf "%s\n" "$line"
-                did_newline=true
-                ;;
+			"* "* )
+				# A list should not continue a previous paragraph.
+				printf "%s\n" "$line"
+				did_newline=true
+				;;
 
-            *)
-                # Paragraph text (does not start with a space)
-                case "$last" in
-                "")
-                    # Start a new paragraph - no space at the beginning
-                    printf "%s" "$line"
-                    ;;
+			*)
+				# Paragraph text (does not start with a space)
+				case "$last" in
+				"")
+					# Start a new paragraph - no space at the beginning
+					printf "%s" "$line"
+					;;
 
-                *)
-                    # Continue this line - include space at the beginning
-                    printf " %s" "$line"
-                    ;;
-                esac
+				*)
+					# Continue this line - include space at the beginning
+					printf "\n%s" "$line"
+					;;
+				esac
 
-                did_newline=false
-                last_was_option=false
-                ;;
-            esac
-        fi
+				did_newline=false
+				last_was_option=false
+				;;
+			esac
+		fi
 
-        last="$line"
-    done
+		last="$line"
+	done
+	set +x
 
-    # shellcheck disable=SC2031
+	# shellcheck disable=SC2031
 
-    if ! $did_newline; then
-        printf "\n"
-    fi
+	if ! $did_newline; then
+		printf "\n"
+	fi
 }
 
 # Read lines from stdin, look for shell function or variable definition, and
 # print function or variable name if found; otherwise, print nothing.
 #
-# Can not use \?, use \{0,1\} instead to preserve Mac support.
-# Can not use \(a\|b\), use two patterns instead for Mac support.
-#
 # Returns nothing.
 parse_code() {
-    sed -n \
-        -e "s/^$OPTIONAL_SPACE_RE\(function$SPACE_RE\)\{0,1\}\($FUNC_NAME_RE\)$OPTIONAL_SPACE_RE().*$/\2()/p" \
-        -e "s/^$OPTIONAL_SPACE_RE\(export$SPACE_RE\)\{0,1\}\($VAR_NAME_RE\)=.*$/\2/p" \
-        -e "s/^${OPTIONAL_SPACE_RE}export$SPACE_RE\($VAR_NAME_RE\).*$/\1/p" \
-        -e "s/^$OPTIONAL_SPACE_RE:$SPACE_RE\${\($VAR_NAME_RE\):\{0,1\}=.*$/\1/p" \
-        -e "s/^${OPTIONAL_SPACE_RE}declare$SPACE_RE\(-[a-zA-Z]*$SPACE_RE\)\{0,1\}\($VAR_NAME_RE\)=.*$/\2/p" \
-        -e "s/^${OPTIONAL_SPACE_RE}declare$SPACE_RE\(-[a-zA-Z]*$SPACE_RE\)\{0,1\}\($VAR_NAME_RE\).*$/\2/p" \
-        -e "s/^${OPTIONAL_SPACE_RE}typeset$SPACE_RE\(-[a-zA-Z]*$SPACE_RE\)\{0,1\}\($VAR_NAME_RE\)=.*$/\2/p" \
-        -e "s/^${OPTIONAL_SPACE_RE}typeset$SPACE_RE\(-[a-zA-Z]*$SPACE_RE\)\{0,1\}\($VAR_NAME_RE\).*$/\2/p"
+	local LIST_exprs=(
+		## Functions
+		"s/^${OPTIONAL_SPACE_RE}(${FUNC_NAME_RE})${OPTIONAL_SPACE_RE}\(\).*$/\1()/p"
+		"s/^${OPTIONAL_SPACE_RE}function${SPACE_RE}(${FUNC_NAME_RE}).*$/\1()/p"
+		## Variables
+		"s/^${OPTIONAL_SPACE_RE}(export)${SPACE_RE}(${VAR_NAME_RE})=$Z_1.*$/\2/p"
+		"s/^${OPTIONAL_SPACE_RE}(${VAR_NAME_RE})=.*$/\1/p"
+		"s/^${OPTIONAL_SPACE_RE}(declare|typeset)${SPACE_RE}(-[a-zA-Z]*${SPACE_RE})$Z_1(${VAR_NAME_RE})=$Z_1.*$/\3/p"
+		"s/^${OPTIONAL_SPACE_RE}(readonly)${SPACE_RE}(${VAR_NAME_RE})(=$Z_1.*)$/const \2\3/p"
+		## Other
+		"s/^${OPTIONAL_SPACE_RE}:${SPACE_RE}\$\{(${VAR_NAME_RE}):$Z_1=.*$/\1/p"
+	)
+	sed -n -E "$(str_join ';' "${LIST_exprs[@]}")"
 }
 
 # Read lines from stdin, look for TomDoc'd shell functions and variables, and
@@ -206,88 +204,94 @@ parse_code() {
 #
 # Returns nothing.
 parse_tomdoc() {
-    doc=
-    while read -r line; do
-        case "$line" in
-        '# shellcheck'*)
-            continue
-            ;;
+	local doc name line
+	while read -r line; do
+		case "$line" in
+		'# shellcheck'*)
+			continue
+			;;
 
-        '#' | '# '*)
-            doc="$doc$line
+		'#' | '# '*)
+			doc+="$line
 "
-            ;;
-        *)
-            test -n "$line" && test -n "$doc" && {
-                # Match access level if given.
-                test -n "$access" &&
-                    case "$doc" in
-                    "# $access:"*) ;;
+			;;
+		*)
+			[[ -n "$line" ]] && [[ -n "$doc" ]] && {
+				# Match access level if given.
+				[[ -n "$access" ]] && {
+					case "$doc" in
+					"# $access:"*) ;;
 
-                    *)
-                        doc=
-                        continue
-                        ;;
-                    esac
+					*)
+						doc=
+						continue
+						;;
+					esac
+				}
 
-                name="$(printf "%s" "$line" | parse_code)"
-                test -n "$name" && "$generate" "$name" "$doc"
-            }
-            doc=
-            ;;
-        esac
-    done
+				name="$(echo "$line" | parse_code)"
+				[[ -n "$name" ]] && "$generate" "$name" "$doc"
+			}
+			doc=
+			;;
+		esac
+	done
 }
 
-#\## SCRIPT STARTS HERE
+### SCRIPT STARTS HERE
 
-[[ $# -eq 0 ]] && set -- --usage
+if [[ $# -eq 0 ]] && [[ -t 0 ]]; then
+	set -- --usage 1
+fi
 
 while [[ $# -ne 0 ]]; do
-    case "$1" in
-    -h | --help)
-        grep '^#/' <"$0" | cut -c4-
-        exit 0
-        ;;
-    --version)
-        printf "tomdoc.sh version %s\n" "$TOMDOCSH_VERSION"
-        exit 0
-        ;;
-    -t | --text)
-        generate=generate_text
-        shift
-        ;;
-    -m | --mark | --markdown)
-        generate=generate_markdown
-        shift
-        ;;
-    -a | --access)
-        [[ $# -ge 2 ]] || {
-            printf "error: %s requires an argument\n" "$1" >&2
-            exit 1
-        }
-        access="$2"
-        shift 2
-        ;;
-    --usage )
-        grep '^#/' <"$0" | head -n1 | cut -c4-
-        exit 1
-        ;;
-    --)
-        shift
-        break
-        ;;
-    - | [!-]*)
-        break
-        ;;
-    -*)
-        printf "error: invalid option '%s'\n" "$1" >&2
-        exit 1
-        ;;
-    esac
+	case "$1" in
+	-h | --help)
+		grep '^#/' <"$0" | cut -c4-
+		exit 0
+		;;
+	--usage )
+		grep '^#/' <"$0" | head -n1 | cut -c4-
+		if [[ $# -eq 2 ]] && [[ $2 =~ ^[0-9]+$ ]]; then
+			retval=$2
+		else
+			retval=0
+		fi
+		exit $retval
+		;;
+	--version)
+		printf "tomdoc.sh version %s\n" "$TOMDOCSH_VERSION"
+		exit 0
+		;;
+	-t | --text)
+		generate=generate_text
+		shift
+		;;
+	-m | --mark | --markdown)
+		generate=generate_markdown
+		shift
+		;;
+	-a | --access)
+		[[ $# -ge 2 ]] || {
+			printf "error: %s requires an argument\n" "$1" >&2
+			exit 1
+		}
+		access="$2"
+		shift 2
+		;;
+	--)
+		shift
+		break
+		;;
+	- | [!-]*)
+		break
+		;;
+	-*)
+		printf "error: invalid option '%s'\n" "$1" >&2
+		exit 1
+		;;
+	esac
 done
-
-
 cat -- "$@" | parse_tomdoc
 
 :
